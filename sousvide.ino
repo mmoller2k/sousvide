@@ -31,7 +31,20 @@
 // ************************************************
 // Pin definitions
 // ************************************************
+#if 1 //new pinout
+#define RelayPin 6
+#define ONE_WIRE_BUS 0
+#define pin_dRS A0
+#define pin_dE A1
+#define pin_d4 A2
+#define pin_d5 A4
+#define pin_d6 A3
+#define pin_d7 A5
 
+#define pin_Up 3
+#define pin_Down 4
+
+#else //old pinout
 // Output Relay
 #define RelayPin A5
 
@@ -57,14 +70,17 @@
 #define pin_d6 12
 #define pin_d7 13
 
+#define pin_Up A0
+#define pin_Down A1 
+#define WITH_SERIAL
+#endif
+
 #define BUTTON_UP 1
 #define BUTTON_DOWN 2
 #define BUTTON_LEFT 4
 #define BUTTON_RIGHT 8
 #define BUTTON_SELECT 16
 
-#define pin_Up A0
-#define pin_Down A1 
 //#define pin_Left 14
 //#define pin_Right 15
 //#define pin_Select A0
@@ -176,8 +192,9 @@ DeviceAddress tempSensor;
 // ************************************************
 void setup()
 {
-   Serial.begin(9600);
-
+#ifdef WITH_SERIAL  
+   //Serial.begin(9600);
+#endif
    // Initialize Relay Control:
 
    pinMode(RelayPin, OUTPUT);    // Output mode to drive relay
@@ -185,8 +202,8 @@ void setup()
 
    // Set up Ground & Power for the sensor from GPIO pins
 
-   pinMode(ONE_WIRE_GND, OUTPUT);
-   digitalWrite(ONE_WIRE_GND, LOW);
+   // pinMode(ONE_WIRE_GND, OUTPUT);
+   //digitalWrite(ONE_WIRE_GND, LOW);
 
    //pinMode(ONE_WIRE_PWR, OUTPUT);
    //digitalWrite(ONE_WIRE_PWR, HIGH);
@@ -772,7 +789,8 @@ void Run()
         }
   
       }
-      
+
+#ifdef WITH_SERIAL      
       // periodically log to serial port in csv format
       if (millis() - lastLogTime > logInterval)  
       {
@@ -781,6 +799,7 @@ void Run()
         Serial.println(Output);
         lastLogTime = millis();
       }
+#endif      
       delay(100);
    }
 }
@@ -810,7 +829,7 @@ void DoControl()
   }
   
   // Time Proportional relay state is updated regularly via timer interrupt.
-  onTime = Output; 
+  //onTime = Output; 
 }
 
 // ************************************************
@@ -824,6 +843,7 @@ void DriveOutput()
   if(now - windowStartTime>WindowSize)
   { //time to shift the Relay Window
      windowStartTime += WindowSize;
+     onTime = Output; 
   }
   if((onTime > 100) && (onTime > (now - windowStartTime)))
   {
