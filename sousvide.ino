@@ -7,7 +7,7 @@
 // Based on the Arduino PID and PID AutoTune Libraries 
 // by Brett Beauregard
 //
-// 2-Button UI Update
+// 2-Button UI Update and start delay timer
 // by Michael Moller
 //------------------------------------------------------------------
 
@@ -31,7 +31,7 @@
 // ************************************************
 // Pin definitions
 // ************************************************
-#if 1 //new pinout
+#if 0 //new pinout
 #define RelayPin 6
 #define ONE_WIRE_BUS 0
 #define pin_dRS A0
@@ -72,7 +72,7 @@
 
 #define pin_Up A0
 #define pin_Down A1 
-#define WITH_SERIAL
+//#define WITH_SERIAL
 #endif
 
 #define BUTTON_UP 1
@@ -164,11 +164,12 @@ byte degree[8] = // define the degree symbol
 
 const int logInterval = 10000; // log every 10 seconds
 long lastLogTime = 0;
+unsigned Twait=0;
 
 // ************************************************
 // States for state machine
 // ************************************************
-enum operatingState { OFF = 0, SETP, RUN, TUNE_P, TUNE_I, TUNE_D, AUTO};
+enum operatingState { OFF = 0, SETP, RUN, TUNE_W, TUNE_P, TUNE_I, TUNE_D, AUTO};
 operatingState opState = OFF;
 
 enum tunemodeState { TEMP=0, MODE };
@@ -244,6 +245,7 @@ void setup()
 
    myPID.SetSampleTime(1000);
    myPID.SetOutputLimits(0, WindowSize);
+   //lcd.clear();
 
 #if 1
   // UNO: Run timer2 interrupt every 15 ms 
@@ -361,6 +363,9 @@ void loop()
     case RUN:
       Run();
       break;
+   case TUNE_W:
+      TuneWait();
+      break;
    case TUNE_P:
       TuneP();
       break;
@@ -382,9 +387,9 @@ void Off()
    //lcd.setBacklight(0);
    digitalWrite(RelayPin, LOW);  // make sure it is off
    lcd.clear();
-   lcd.print(F("Adafruit"));
-   lcd.setCursor(0, 1);
-   lcd.print(F("SousVide"));
+   //lcd.print(F("Adafruit"));
+   //lcd.setCursor(0, 1);
+   //lcd.print(F("SousVide"));
    uint8_t buttons = 0;
 /*   
    while(!(buttons & (BUTTON_RIGHT)))
@@ -722,6 +727,55 @@ void TuneD()
    }
 }
 
+void TuneWait()
+{
+    int Tk=KEY_SLOW;
+    int increment = 15*60; //15 minutes
+   //lcd.setBacklight(TEAL);
+   lcd.clear();
+   lcd.print(F(" Delay"));
+   lcd.setCursor(0,1);
+   showTwait();
+
+   uint8_t buttons = 0;
+   while(true)
+   {
+      buttons = ReadButtons();
+      if(!buttons){
+        Tk=KEY_SLOW;      
+      }
+      else if ((buttons & BUTTON_UP) && (buttons & BUTTON_DOWN)){
+        opState = TUNE_P;
+        return;
+      }
+      else if (buttons & BUTTON_UP)
+      {
+         Twait += increment;
+         Twait -= Twait%increment;
+         showTwait();
+         delay(Tk);
+         Tk=KEY_FAST;
+      }
+      else if (buttons & BUTTON_DOWN)
+      {
+         if(Twait>=increment){
+          Twait -= increment;
+         }
+         else Twait=0;
+         Twait -= Twait%increment;
+         showTwait();
+         delay(Tk);
+         Tk=KEY_FAST;
+      }
+      if (!buttons && ((millis() - lastInput) > 6000))  // return to RUN after 6 seconds idle
+      {
+         opState = RUN;
+         return;
+      }
+      DoControl();
+   }
+}
+
 // ************************************************
 // PID COntrol State
 // Up/Down to adjust Setpoint
@@ -731,6 +785,7 @@ void TuneD()
 void Run()
 {
    float increment=0.5;
+   static int lc=0;
    // set up the LCD's number of rows and columns: 
    SaveParameters();
    myPID.SetTunings(Kp,Ki,Kd);
@@ -742,7 +797,7 @@ void Run()
 
       buttons = ReadButtons();
       if ((buttons & BUTTON_UP) && (buttons & BUTTON_DOWN)){
-        opState = TUNE_P;
+        opState = TUNE_W;
         return;
       }
       else if (buttons & (BUTTON_UP | BUTTON_DOWN))
@@ -754,7 +809,8 @@ void Run()
       DoControl();
       
       if (millis() - lastInput > KEY_FAST)  {
-        lcd.clear();
+        //lcd.clear();
+        lcd.setCursor(0,0);
         lcd.print(" ");
         lcd.print(float2s(Input,1));
         lcd.write(1);
@@ -767,7 +823,8 @@ void Run()
           lcd.setCursor(0,1);
           lcd.print("Tuning..");
         }
-        else{
+        else if(Twait==0){
+          myPID.SetMode(AUTOMATIC);
           lcd.setCursor(0,1);
           if(relay_flag){
             lcd.print(F("*    "));
@@ -785,7 +842,14 @@ void Run()
           if(relay_flag){
             lcd.print("*");
           }
-          
+          else{
+            lcd.print(" ");
+          }
+        }
+        else{
+          myPID.SetMode(MANUAL);
+          onTime = Output = 0;
+          showTwait();
         }
   
       }
@@ -799,9 +863,33 @@ void Run()
         Serial.println(Output);
         lastLogTime = millis();
       }
-#endif      
-      delay(100);
+#endif
+      lc++;
+      if(lc>=10){
+        if(Twait)Twait--;
+        lc=0;
+      }
+      delay(65); //approx 100ms loop time
    }
+}
+
+void showTwo(int n)
+{
+  if(n<10)lcd.print("0");
+  lcd.print(n%100);
+}
+
+void showTwait(void)
+{
+  int h = Twait/3600;
+  int m = (Twait%3600)/60;
+  int s = Twait%60;
+  lcd.setCursor(0,1);
+  showTwo(h);
+  lcd.print(":");
+  showTwo(m);
+  lcd.print(":");
+  showTwo(s);
 }
 
 // ************************************************
@@ -1000,11 +1088,11 @@ void LoadParameters()
    }
    if (isnan(Ki))
    {
-     Ki = 0.5;
+     Ki = 0.2;
    }
    if (isnan(Kd))
    {
-     Kd = 0.1;
+     Kd = 0.0;
    }  
 }
 
